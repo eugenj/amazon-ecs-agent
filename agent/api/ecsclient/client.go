@@ -16,6 +16,7 @@ package ecsclient
 import (
 	"errors"
 	"fmt"
+	"net"
 	"runtime"
 	"strings"
 	"time"
@@ -210,6 +211,16 @@ func (client *APIECSClient) registerContainerInstance(clusterRef string, contain
 	return aws.StringValue(resp.ContainerInstance.ContainerInstanceArn), availabilityzone, err
 }
 
+func getPrivateIP() (net.IP, error) {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return []byte(""), err
+	}
+	defer conn.Close()
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP, nil
+}
+
 func (client *APIECSClient) setInstanceIdentity(registerRequest ecs.RegisterContainerInstanceInput) ecs.RegisterContainerInstanceInput {
 	instanceIdentityDoc := ""
 	instanceIdentitySignature := ""
@@ -346,6 +357,13 @@ func (client *APIECSClient) getAdditionalAttributes() []*ecs.Attribute {
 			Name:  aws.String(cpuArchAttrName),
 			Value: aws.String(getCPUArch()),
 		})
+		privateIp, err := getPrivateIP()
+		if err == nil {
+			attrs = append(attrs, &ecs.Attribute{
+				Name:  aws.String("ecs.private-ip-addr"),
+				Value: aws.String(privateIp.String()),
+			})
+		}
 	}
 	return attrs
 }
