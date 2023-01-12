@@ -19,7 +19,6 @@ package task
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"runtime"
 	"testing"
 
@@ -31,9 +30,7 @@ import (
 	"github.com/aws/amazon-ecs-agent/agent/config"
 	"github.com/aws/amazon-ecs-agent/agent/ecscni"
 	"github.com/aws/amazon-ecs-agent/agent/taskresource"
-	"github.com/aws/amazon-ecs-agent/agent/taskresource/credentialspec"
 	"github.com/aws/amazon-ecs-agent/agent/taskresource/fsxwindowsfileserver"
-	resourcestatus "github.com/aws/amazon-ecs-agent/agent/taskresource/status"
 	taskresourcevolume "github.com/aws/amazon-ecs-agent/agent/taskresource/volume"
 	"github.com/aws/amazon-ecs-agent/agent/utils"
 	"github.com/golang/mock/gomock"
@@ -46,7 +43,6 @@ import (
 	mock_asm_factory "github.com/aws/amazon-ecs-agent/agent/asm/factory/mocks"
 	mock_credentials "github.com/aws/amazon-ecs-agent/agent/credentials/mocks"
 	mock_fsx_factory "github.com/aws/amazon-ecs-agent/agent/fsx/factory/mocks"
-	mock_s3_factory "github.com/aws/amazon-ecs-agent/agent/s3/factory/mocks"
 	mock_ssm_factory "github.com/aws/amazon-ecs-agent/agent/ssm/factory/mocks"
 )
 
@@ -123,19 +119,20 @@ func TestPostUnmarshalWindowsCanonicalPaths(t *testing.T) {
 	task.PostUnmarshalTask(&cfg, nil, nil, nil, nil)
 
 	for _, container := range task.Containers { // remove v3 endpoint from each container because it's randomly generated
-		removeV3andV4EndpointConfig(container)
+		removeEndpointConfigFromEnvironment(container)
 	}
 	assert.Equal(t, expectedTask.Containers, task.Containers, "Containers should be equal")
 	assert.Equal(t, expectedTask.Volumes, task.Volumes, "Volumes should be equal")
 }
 
-// removeV3EndpointConfig removes the v3 endpoint id and the injected env for a container
+// removeEndpointConfigFromEnvironment removes the v3 endpoint id and the injected env for a container
 // so that checking all other fields can be easier
-func removeV3andV4EndpointConfig(container *apicontainer.Container) {
+func removeEndpointConfigFromEnvironment(container *apicontainer.Container) {
 	container.SetV3EndpointID("")
 	if container.Environment != nil {
 		delete(container.Environment, apicontainer.MetadataURIEnvironmentVariableName)
 		delete(container.Environment, apicontainer.MetadataURIEnvVarNameV4)
+		delete(container.Environment, apicontainer.AgentURIEnvVarName)
 	}
 	if len(container.Environment) == 0 {
 		container.Environment = nil
@@ -355,172 +352,6 @@ func TestGetCanonicalPath(t *testing.T) {
 	}
 }
 
-func TestRequiresCredentialSpecResource(t *testing.T) {
-	container1 := &apicontainer.Container{}
-	task1 := &Task{
-		Arn:        "test",
-		Containers: []*apicontainer.Container{container1},
-	}
-
-	hostConfig := "{\"SecurityOpt\": [\"credentialspec:file://gmsa_gmsa-acct.json\"]}"
-	container2 := &apicontainer.Container{}
-	container2.DockerConfig.HostConfig = &hostConfig
-	task2 := &Task{
-		Arn:        "test",
-		Containers: []*apicontainer.Container{container2},
-	}
-
-	testCases := []struct {
-		name           string
-		task           *Task
-		expectedOutput bool
-	}{
-		{
-			name:           "missing_credentialspec",
-			task:           task1,
-			expectedOutput: false,
-		},
-		{
-			name:           "valid_credentialspec",
-			task:           task2,
-			expectedOutput: true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expectedOutput, tc.task.requiresCredentialSpecResource())
-		})
-	}
-
-}
-
-func TestGetAllCredentialSpecRequirements(t *testing.T) {
-	hostConfig := "{\"SecurityOpt\": [\"credentialspec:file://gmsa_gmsa-acct.json\"]}"
-	container := &apicontainer.Container{Name: "webapp1"}
-	container.DockerConfig.HostConfig = &hostConfig
-
-	task := &Task{
-		Arn:        "test",
-		Containers: []*apicontainer.Container{container},
-	}
-
-	credentialSpecContainerMap := task.getAllCredentialSpecRequirements()
-
-	credentialspecFileLocation := "credentialspec:file://gmsa_gmsa-acct.json"
-	expectedCredentialSpecContainerMap := map[string]string{credentialspecFileLocation: "webapp1"}
-
-	assert.True(t, reflect.DeepEqual(expectedCredentialSpecContainerMap, credentialSpecContainerMap))
-}
-
-func TestGetAllCredentialSpecRequirementsWithMultipleContainersUsingSameSpec(t *testing.T) {
-	hostConfig := "{\"SecurityOpt\": [\"credentialspec:file://gmsa_gmsa-acct.json\"]}"
-	c1 := &apicontainer.Container{Name: "webapp1"}
-	c1.DockerConfig.HostConfig = &hostConfig
-
-	c2 := &apicontainer.Container{Name: "webapp2"}
-	c2.DockerConfig.HostConfig = &hostConfig
-
-	task := &Task{
-		Arn:        "test",
-		Containers: []*apicontainer.Container{c1, c2},
-	}
-
-	credentialSpecContainerMap := task.getAllCredentialSpecRequirements()
-
-	credentialspecFileLocation := "credentialspec:file://gmsa_gmsa-acct.json"
-	expectedCredentialSpecContainerMap := map[string]string{credentialspecFileLocation: "webapp2"}
-
-	assert.Equal(t, len(expectedCredentialSpecContainerMap), len(credentialSpecContainerMap))
-	assert.True(t, reflect.DeepEqual(expectedCredentialSpecContainerMap, credentialSpecContainerMap))
-}
-
-func TestGetAllCredentialSpecRequirementsWithMultipleContainers(t *testing.T) {
-	hostConfig1 := "{\"SecurityOpt\": [\"credentialspec:file://gmsa_gmsa-acct-1.json\"]}"
-	hostConfig2 := "{\"SecurityOpt\": [\"credentialspec:file://gmsa_gmsa-acct-2.json\"]}"
-
-	c1 := &apicontainer.Container{Name: "webapp1"}
-	c1.DockerConfig.HostConfig = &hostConfig1
-
-	c2 := &apicontainer.Container{Name: "webapp2"}
-	c2.DockerConfig.HostConfig = &hostConfig1
-
-	c3 := &apicontainer.Container{Name: "webapp3"}
-	c3.DockerConfig.HostConfig = &hostConfig2
-
-	task := &Task{
-		Arn:        "test",
-		Containers: []*apicontainer.Container{c1, c2, c3},
-	}
-
-	credentialSpecContainerMap := task.getAllCredentialSpecRequirements()
-
-	credentialspec1 := "credentialspec:file://gmsa_gmsa-acct-1.json"
-	credentialspec2 := "credentialspec:file://gmsa_gmsa-acct-2.json"
-
-	expectedCredentialSpecContainerMap := map[string]string{credentialspec1: "webapp2", credentialspec2: "webapp3"}
-
-	assert.True(t, reflect.DeepEqual(expectedCredentialSpecContainerMap, credentialSpecContainerMap))
-}
-
-func TestInitializeAndGetCredentialSpecResource(t *testing.T) {
-	hostConfig := "{\"SecurityOpt\": [\"credentialspec:file://gmsa_gmsa-acct.json\"]}"
-	container := &apicontainer.Container{
-		Name:                      "myName",
-		TransitionDependenciesMap: make(map[apicontainerstatus.ContainerStatus]apicontainer.TransitionDependencySet),
-	}
-	container.DockerConfig.HostConfig = &hostConfig
-
-	task := &Task{
-		Arn:                "test",
-		Containers:         []*apicontainer.Container{container},
-		ResourcesMapUnsafe: make(map[string][]taskresource.TaskResource),
-	}
-
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	cfg := &config.Config{
-		AWSRegion: "test-aws-region",
-	}
-
-	credentialsManager := mock_credentials.NewMockManager(ctrl)
-	ssmClientCreator := mock_ssm_factory.NewMockSSMClientCreator(ctrl)
-	s3ClientCreator := mock_s3_factory.NewMockS3ClientCreator(ctrl)
-
-	resFields := &taskresource.ResourceFields{
-		ResourceFieldsCommon: &taskresource.ResourceFieldsCommon{
-			SSMClientCreator:   ssmClientCreator,
-			CredentialsManager: credentialsManager,
-		},
-		S3ClientCreator: s3ClientCreator,
-	}
-
-	task.initializeCredentialSpecResource(cfg, credentialsManager, resFields)
-
-	resourceDep := apicontainer.ResourceDependency{
-		Name:           credentialspec.ResourceName,
-		RequiredStatus: resourcestatus.ResourceStatus(credentialspec.CredentialSpecCreated),
-	}
-
-	assert.Equal(t, resourceDep, task.Containers[0].TransitionDependenciesMap[apicontainerstatus.ContainerCreated].ResourceDependencies[0])
-
-	_, ok := task.GetCredentialSpecResource()
-	assert.True(t, ok)
-}
-
-func TestGetCredentialSpecResource(t *testing.T) {
-	credentialspecResource := &credentialspec.CredentialSpecResource{}
-	task := &Task{
-		ResourcesMapUnsafe: make(map[string][]taskresource.TaskResource),
-	}
-	task.AddResource(credentialspec.ResourceName, credentialspecResource)
-
-	credentialspecTaskResource, ok := task.GetCredentialSpecResource()
-	assert.True(t, ok)
-	assert.NotEmpty(t, credentialspecTaskResource)
-}
-
 func TestRequiresFSxWindowsFileServerResource(t *testing.T) {
 	task1 := &Task{
 		Arn: "test1",
@@ -731,6 +562,7 @@ func TestPostUnmarshalTaskWithFSxWindowsFileServerVolumes(t *testing.T) {
 // TestBuildCNIConfig tests if the generated CNI config is correct
 func TestBuildCNIConfig(t *testing.T) {
 	testTask := &Task{}
+	testTask.NetworkMode = AWSVPCNetworkMode
 	testTask.AddTaskENI(&apieni.ENI{
 		ID:                           "TestBuildCNIConfig",
 		MacAddress:                   mac,
@@ -744,7 +576,7 @@ func TestBuildCNIConfig(t *testing.T) {
 		},
 	})
 
-	cniConfig, err := testTask.BuildCNIConfig(true, &ecscni.Config{
+	cniConfig, err := testTask.BuildCNIConfigAwsvpc(true, &ecscni.Config{
 		MinSupportedCNIVersion: "latest",
 	})
 	assert.NoError(t, err)

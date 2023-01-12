@@ -21,17 +21,16 @@ import (
 	"time"
 
 	"github.com/aws/amazon-ecs-agent/agent/ecscni"
+	"github.com/aws/amazon-ecs-agent/agent/logger"
+	"github.com/aws/amazon-ecs-agent/agent/logger/field"
 	"github.com/aws/amazon-ecs-agent/agent/utils"
 	"github.com/containernetworking/cni/libcni"
 
-	apicontainerstatus "github.com/aws/amazon-ecs-agent/agent/api/container/status"
 	apieni "github.com/aws/amazon-ecs-agent/agent/api/eni"
 	"github.com/aws/amazon-ecs-agent/agent/config"
 	"github.com/aws/amazon-ecs-agent/agent/credentials"
 	"github.com/aws/amazon-ecs-agent/agent/taskresource"
-	"github.com/aws/amazon-ecs-agent/agent/taskresource/credentialspec"
 	"github.com/aws/amazon-ecs-agent/agent/taskresource/fsxwindowsfileserver"
-	resourcestatus "github.com/aws/amazon-ecs-agent/agent/taskresource/status"
 	resourcetype "github.com/aws/amazon-ecs-agent/agent/taskresource/types"
 	taskresourcevolume "github.com/aws/amazon-ecs-agent/agent/taskresource/volume"
 	"github.com/cihub/seelog"
@@ -124,63 +123,17 @@ func (task *Task) dockerCPUShares(containerCPU uint) int64 {
 }
 
 func (task *Task) initializeCgroupResourceSpec(cgroupPath string, cGroupCPUPeriod time.Duration, resourceFields *taskresource.ResourceFields) error {
+	if !task.MemoryCPULimitsEnabled {
+		if task.CPU > 0 || task.Memory > 0 {
+			// Client-side validation/warning if a task with task-level CPU/memory limits specified somehow lands on an instance
+			// where agent does not support it. These limits will be ignored.
+			logger.Warn("Ignoring task-level CPU/memory limits since agent does not support the TaskCPUMemLimits capability", logger.Fields{
+				field.TaskID: task.GetID(),
+			})
+		}
+		return nil
+	}
 	return errors.New("unsupported platform")
-}
-
-// requiresCredentialSpecResource returns true if at least one container in the task
-// needs a valid credentialspec resource
-func (task *Task) requiresCredentialSpecResource() bool {
-	for _, container := range task.Containers {
-		if container.RequiresCredentialSpec() {
-			return true
-		}
-	}
-	return false
-}
-
-// initializeCredentialSpecResource builds the resource dependency map for the credentialspec resource
-func (task *Task) initializeCredentialSpecResource(config *config.Config, credentialsManager credentials.Manager,
-	resourceFields *taskresource.ResourceFields) error {
-	credspecContainerMapping := task.getAllCredentialSpecRequirements()
-	credentialspecResource, err := credentialspec.NewCredentialSpecResource(task.Arn, config.AWSRegion, task.ExecutionCredentialsID,
-		credentialsManager, resourceFields.SSMClientCreator, resourceFields.S3ClientCreator, credspecContainerMapping)
-	if err != nil {
-		return err
-	}
-
-	task.AddResource(credentialspec.ResourceName, credentialspecResource)
-
-	// for every container that needs credential spec vending, it needs to wait for all credential spec resources
-	for _, container := range task.Containers {
-		if container.RequiresCredentialSpec() {
-			container.BuildResourceDependency(credentialspecResource.GetName(),
-				resourcestatus.ResourceStatus(credentialspec.CredentialSpecCreated),
-				apicontainerstatus.ContainerCreated)
-		}
-	}
-
-	return nil
-}
-
-// getAllCredentialSpecRequirements is used to build all the credential spec requirements for the task
-func (task *Task) getAllCredentialSpecRequirements() map[string]string {
-	reqsContainerMap := make(map[string]string)
-	for _, container := range task.Containers {
-		credentialSpec, err := container.GetCredentialSpec()
-		if err == nil && credentialSpec != "" {
-			reqsContainerMap[credentialSpec] = container.Name
-		}
-	}
-	return reqsContainerMap
-}
-
-// GetCredentialSpecResource retrieves credentialspec resource from resource map
-func (task *Task) GetCredentialSpecResource() ([]taskresource.TaskResource, bool) {
-	task.lock.RLock()
-	defer task.lock.RUnlock()
-
-	res, ok := task.ResourcesMapUnsafe[credentialspec.ResourceName]
-	return res, ok
 }
 
 func enableIPv6SysctlSetting(hostConfig *dockercontainer.HostConfig) {
@@ -250,8 +203,8 @@ func (task *Task) addFSxWindowsFileServerResource(
 	return nil
 }
 
-// BuildCNIConfig builds a list of CNI network configurations for the task.
-func (task *Task) BuildCNIConfig(includeIPAMConfig bool, cniConfig *ecscni.Config) (*ecscni.Config, error) {
+// BuildCNIConfigAwsvpc builds a list of CNI network configurations for the task.
+func (task *Task) BuildCNIConfigAwsvpc(includeIPAMConfig bool, cniConfig *ecscni.Config) (*ecscni.Config, error) {
 	if !task.IsNetworkModeAWSVPC() {
 		return nil, errors.New("task config: task network mode is not awsvpc")
 	}
@@ -278,7 +231,7 @@ func (task *Task) BuildCNIConfig(includeIPAMConfig bool, cniConfig *ecscni.Confi
 
 		// IfName is expected by the plugin but is not used.
 		cniConfig.NetworkConfigs = append(cniConfig.NetworkConfigs, &ecscni.NetworkConfig{
-			IfName:           eni.ID,
+			IfName:           ecscni.DefaultENIName,
 			CNINetworkConfig: netconf,
 		})
 	}
@@ -294,4 +247,9 @@ func (task *Task) BuildCNIConfig(includeIPAMConfig bool, cniConfig *ecscni.Confi
 	})
 
 	return cniConfig, nil
+}
+
+// BuildCNIConfigBridgeMode builds a list of CNI network configurations for a task in docker bridge mode.
+func (task *Task) BuildCNIConfigBridgeMode(cniConfig *ecscni.Config, containerName string) (*ecscni.Config, error) {
+	return nil, errors.New("unsupported platform")
 }

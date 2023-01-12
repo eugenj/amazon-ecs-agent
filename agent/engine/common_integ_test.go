@@ -40,8 +40,12 @@ import (
 	"github.com/aws/amazon-ecs-agent/agent/ec2"
 	"github.com/aws/amazon-ecs-agent/agent/engine/dockerstate"
 	"github.com/aws/amazon-ecs-agent/agent/engine/execcmd"
+	engineserviceconnect "github.com/aws/amazon-ecs-agent/agent/engine/serviceconnect"
 	"github.com/aws/amazon-ecs-agent/agent/eventstream"
+	s3factory "github.com/aws/amazon-ecs-agent/agent/s3/factory"
+	ssmfactory "github.com/aws/amazon-ecs-agent/agent/ssm/factory"
 	"github.com/aws/amazon-ecs-agent/agent/statechange"
+	"github.com/aws/amazon-ecs-agent/agent/taskresource"
 	log "github.com/cihub/seelog"
 	"github.com/stretchr/testify/assert"
 )
@@ -83,6 +87,42 @@ func setupIntegTestLogs(t *testing.T) string {
 	assert.NoError(t, err, "unable to replace logger")
 
 	return testLogDir
+}
+
+func setupGMSALinux(cfg *config.Config, state dockerstate.TaskEngineState, t *testing.T) (TaskEngine, func(), credentials.Manager) {
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
+
+	skipIntegTestIfApplicable(t)
+
+	sdkClientFactory := sdkclientfactory.NewFactory(ctx, dockerEndpoint)
+	dockerClient, err := dockerapi.NewDockerGoClient(sdkClientFactory, cfg, context.Background())
+	if err != nil {
+		t.Fatalf("Error creating Docker client: %v", err)
+	}
+	credentialsManager := credentials.NewManager()
+	if state == nil {
+		state = dockerstate.NewTaskEngineState()
+	}
+	imageManager := NewImageManager(cfg, dockerClient, state)
+	imageManager.SetDataClient(data.NewNoopClient())
+	metadataManager := containermetadata.NewManager(dockerClient, cfg)
+
+	resourceFields := &taskresource.ResourceFields{
+		ResourceFieldsCommon: &taskresource.ResourceFieldsCommon{
+			SSMClientCreator: ssmfactory.NewSSMClientCreator(),
+			S3ClientCreator:  s3factory.NewS3ClientCreator(),
+		},
+		DockerClient: dockerClient,
+	}
+
+	taskEngine := NewDockerTaskEngine(cfg, dockerClient, credentialsManager,
+		eventstream.NewEventStream("ENGINEINTEGTEST", context.Background()), imageManager, state, metadataManager,
+		resourceFields, execcmd.NewManager(), engineserviceconnect.NewManager())
+	taskEngine.MustInit(context.TODO())
+	return taskEngine, func() {
+		taskEngine.Shutdown()
+	}, credentialsManager
 }
 
 func loggerConfigIntegrationTest(logfile string) string {
@@ -169,7 +209,7 @@ func setup(cfg *config.Config, state dockerstate.TaskEngineState, t *testing.T) 
 
 	taskEngine := NewDockerTaskEngine(cfg, dockerClient, credentialsManager,
 		eventstream.NewEventStream("ENGINEINTEGTEST", context.Background()), imageManager, state, metadataManager,
-		nil, execcmd.NewManager())
+		nil, execcmd.NewManager(), engineserviceconnect.NewManager())
 	taskEngine.MustInit(context.TODO())
 	return taskEngine, func() {
 		taskEngine.Shutdown()
@@ -212,13 +252,14 @@ func waitForTaskCleanup(t *testing.T, taskEngine TaskEngine, taskArn string, sec
 // Organized first by EventType (Task or Container),
 // then by StatusType (i.e. RUNNING, STOPPED, etc)
 // then by Task/Container identifying string (TaskARN or ContainerName)
-//                   EventType
-//                  /         \
-//          TaskEvent         ContainerEvent
-//        /          \           /        \
-//    RUNNING      STOPPED   RUNNING      STOPPED
-//    /    \        /    \      |             |
-//  ARN1  ARN2    ARN3  ARN4  ARN:Cont1    ARN:Cont2
+//
+//	                 EventType
+//	                /         \
+//	        TaskEvent         ContainerEvent
+//	      /          \           /        \
+//	  RUNNING      STOPPED   RUNNING      STOPPED
+//	  /    \        /    \      |             |
+//	ARN1  ARN2    ARN3  ARN4  ARN:Cont1    ARN:Cont2
 type EventSet map[statechange.EventType]statusToName
 
 // Type definition for mapping a Status to a TaskARN/ContainerName

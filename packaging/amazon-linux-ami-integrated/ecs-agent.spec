@@ -26,7 +26,7 @@
 %global agent_image ecs-agent-v%{version}.tar
 
 Name:           ecs-init
-Version:        1.62.2
+Version:        1.68.0
 Release:        1%{?dist}
 License:        Apache 2.0
 Summary:        Amazon Elastic Container Service initialization application
@@ -161,7 +161,7 @@ required routes among its preparation steps.
 # each of these should build for arm and amd arch
 ./scripts/get-host-certs
 ./scripts/build-cni-plugins
-./scripts/build-integrated true "" false true
+./scripts/build-integrated true "" true true
 ./scripts/build-agent-image
 ./scripts/gobuild.sh %{gobuild_tag}
 
@@ -272,6 +272,45 @@ fi
 %endif
 
 %changelog
+* Mon Jan 09 2023 Ray Allan <fierlion@amazon.com> - 1.68.0-1
+- Cache Agent version 1.68.0
+
+* Mon Dec 12 2022 Utsa Bhattacharjya <utsa@amazon.com> - 1.67.2-1
+- Cache Agent version 1.67.2
+
+* Wed Dec 07 2022 Dane H Lim <slimdane@amazon.com> - 1.67.1-1
+- Cache Agent version 1.67.1
+
+* Mon Dec 05 2022 Yash Kulshrestha <kulshres@amazon.com> - 1.67.0-1
+- Cache Agent version 1.67.0
+
+* Sat Nov 12 2022 Heming Han <hanhm@amazon.com> - 1.66.2-1
+- Cache Agent version 1.66.2
+
+* Thu Nov 10 2022 Heming Han <hanhm@amazon.com> - 1.66.1-1
+- Cache Agent version 1.66.1
+
+* Tue Nov 08 2022 Cameron Sparr <cssparr@amazon.com> - 1.66.0-1
+- Cache Agent version 1.66.0
+
+* Fri Oct 28 2022 Ray Allan <fierlion@amazon.com> - 1.65.1-1
+- Cache Agent version 1.65.1
+
+* Wed Oct 19 2022 Mythri Garaga Manjunatha <mythr@amazon.com> - 1.65.0-1
+- Cache Agent version 1.65.0
+
+* Tue Oct 04 2022 Utsa Bhattacharjya <utsa@amazon.com> - 1.64.0-1
+- Cache Agent version 1.64.0
+
+* Mon Sep 12 2022 Chien Han Lin <chilinn@amazon.com> - 1.63.1-1
+- Cache Agent version 1.63.1
+- Dependabot ecs-init fixes
+
+* Tue Sep 06 2022 Chien Han Lin <chilinn@amazon.com> - 1.63.0-1
+- Cache Agent version 1.63.0
+- Update dependencies to include security patches reported by dependabot for ecs-init
+- Fix format string for ecs-init
+
 * Wed Aug 17 2022 Yash Kulshrestha <kulshres@amazon.com> - 1.62.2-1
 - Cache Agent version 1.62.2
 
@@ -283,6 +322,9 @@ fi
 
 * Wed Jun 15 2022 Mythri Garaga Manjunatha <mythr@amazon.com> - 1.61.3-1
 - Cache Agent version 1.61.3
+
+* Wed Jun 01 2022 Utsa Bhattacharjya <utsa@amazon.com> - 1.61.2-1
+- Cache Agent version 1.61.2
 
 * Tue May 03 2022 Anuj Singh <singholt@amazon.com> - 1.61.1-1
 - Cache Agent version 1.61.1
@@ -737,3 +779,4 @@ fi
 
 * Mon Dec 15 2014 Samuel Karp <skarp@amazon.com> - 0.2-1
 - Naive update functionality
+

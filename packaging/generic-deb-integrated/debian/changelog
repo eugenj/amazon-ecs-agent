@@ -1,3 +1,78 @@
+amazon-ecs-init (1.68.0-1) stable; urgency=medium
+
+  * Cache Agent version 1.68.0
+
+ -- Ray Allan <fierlion@amazon.com>  Mon, 09 Jan 2023 18:00:00 +0000
+
+amazon-ecs-init (1.67.2-1) stable; urgency=medium
+
+  * Cache Agent version 1.67.2
+
+ -- Utsa Bhattacharjya <utsa@amazon.com>  Mon, 12 Dec 2022 18:00:00 +0000
+
+amazon-ecs-init (1.67.1-1) stable; urgency=medium
+
+  * Cache Agent version 1.67.1
+
+ -- Dane H Lim <slimdane@amazon.com>  Wed, 07 Dec 2022 18:00:00 +0000
+
+amazon-ecs-init (1.67.0-1) stable; urgency=medium
+
+  * Cache Agent version 1.67.0
+
+ -- Yash Kulshrestha <kulshres@amazon.com>  Mon, 05 Dec 2022 18:00:00 +0000
+
+amazon-ecs-init (1.66.2-1) stable; urgency=medium
+
+  * Cache Agent version 1.66.2
+
+ -- Heming Han <hanhm@amazon.com>  Sat, 12 Nov 2022 18:00:00 +0000
+
+amazon-ecs-init (1.66.1-1) stable; urgency=medium
+
+  * Cache Agent version 1.66.1
+
+ -- Heming Han <hanhm@amazon.com>  Thu, 10 Nov 2022 18:00:00 +0000
+
+amazon-ecs-init (1.66.0-1) stable; urgency=medium
+
+  * Cache Agent version 1.66.0
+
+ -- Cameron Sparr <cssparr@amazon.com>  Tue, 08 Nov 2022 18:00:00 +0000
+
+amazon-ecs-init (1.65.1-1) stable; urgency=medium
+
+  * Cache Agent version 1.65.1
+
+ -- Ray Allan <fierlion@amazon.com>  Fri, 28 Oct 2022 18:00:00 +0000
+
+amazon-ecs-init (1.65.0-1) stable; urgency=medium
+
+  * Cache Agent version 1.65.0
+
+ -- Mythri Garaga Manjunatha <mythr@amazon.com>  Wed, 19 Oct 2022 18:00:00 +0000
+
+amazon-ecs-init (1.64.0-1) stable; urgency=medium
+
+  * Cache Agent version 1.64.0
+
+ -- Utsa Bhattacharjya <utsa@amazon.com>  Tue, 04 Oct 2022 18:00:00 +0000
+
+amazon-ecs-init (1.63.1-1) stable; urgency=medium
+
+  * Cache Agent version 1.63.1
+  * Dependabot ecs-init fixes
+
+ -- Chien Han Lin <chilinn@amazon.com>  Mon, 12 Sep 2022 18:00:00 +0000
+
+amazon-ecs-init (1.63.0-1) stable; urgency=medium
+
+  * Cache Agent version 1.63.0
+  * Update dependencies to include security patches reported by dependabot for ecs-init
+  * Fix format string for ecs-init
+
+ -- Chien Han Lin <chilinn@amazon.com>  Tue, 06 Sep 2022 18:00:00 +0000
+
 amazon-ecs-init (1.62.2-1) stable; urgency=medium
 
   * Cache Agent version 1.62.2
@@ -21,6 +96,12 @@ amazon-ecs-init (1.61.3-1) stable; urgency=medium
   * Cache Agent version 1.61.3
 
  -- Mythri Garaga Manjunatha <mythr@amazon.com>  Wed, 15 Jun 2022 18:00:00 +0000
+
+amazon-ecs-init (1.61.2-1) stable; urgency=medium
+
+  * Cache Agent version 1.61.2
+
+ -- Utsa Bhattacharjya <utsa@amazon.com>  Wed, 01 Jun 2022 18:00:00 +0000
 
 amazon-ecs-init (1.61.1-1) stable; urgency=medium
 

@@ -44,6 +44,7 @@ import (
 	"github.com/aws/amazon-ecs-agent/agent/ecs_client/model/ecs"
 	"github.com/aws/amazon-ecs-agent/agent/engine/dockerstate"
 	"github.com/aws/amazon-ecs-agent/agent/engine/execcmd"
+	engineserviceconnect "github.com/aws/amazon-ecs-agent/agent/engine/serviceconnect"
 	"github.com/aws/amazon-ecs-agent/agent/eventstream"
 	s3factory "github.com/aws/amazon-ecs-agent/agent/s3/factory"
 	ssmfactory "github.com/aws/amazon-ecs-agent/agent/ssm/factory"
@@ -487,14 +488,14 @@ func setupGMSA(cfg *config.Config, state dockerstate.TaskEngineState, t *testing
 	resourceFields := &taskresource.ResourceFields{
 		ResourceFieldsCommon: &taskresource.ResourceFieldsCommon{
 			SSMClientCreator: ssmfactory.NewSSMClientCreator(),
+			S3ClientCreator:  s3factory.NewS3ClientCreator(),
 		},
-		DockerClient:    dockerClient,
-		S3ClientCreator: s3factory.NewS3ClientCreator(),
+		DockerClient: dockerClient,
 	}
 
 	taskEngine := NewDockerTaskEngine(cfg, dockerClient, credentialsManager,
 		eventstream.NewEventStream("ENGINEINTEGTEST", context.Background()), imageManager, state, metadataManager,
-		resourceFields, execcmd.NewManager())
+		resourceFields, execcmd.NewManager(), engineserviceconnect.NewManager())
 	taskEngine.MustInit(context.TODO())
 	return taskEngine, func() {
 		taskEngine.Shutdown()
@@ -736,7 +737,7 @@ func setupEngineForExecCommandAgent(t *testing.T, hostBinDir string) (TaskEngine
 
 	taskEngine := NewDockerTaskEngine(cfg, dockerClient, credentialsManager,
 		eventstream.NewEventStream("ENGINEINTEGTEST", context.Background()), imageManager, state, metadataManager,
-		nil, execCmdMgr)
+		nil, execCmdMgr, engineserviceconnect.NewManager())
 	taskEngine.monitorExecAgentsInterval = time.Second
 	taskEngine.MustInit(context.TODO())
 	return taskEngine, func() {
@@ -837,7 +838,10 @@ func verifyMockExecCommandAgentStatus(t *testing.T, client *sdkClient.Client, co
 			require.NotEqual(t, -1, pidPos, "PID title not found in the container top response")
 			for _, proc := range top.Processes {
 				matched, _ := regexp.MatchString(execCmdAgentProcessRegex, proc[cmdPos])
-				if matched {
+				// Process we are checking to be stopped might still be running.
+				// expectedPid matches the pid of the process in that case, so wait if that's
+				// the case.
+				if matched && (checkIsRunning || expectedPid != proc[pidPos]) {
 					res <- proc[pidPos]
 					return
 				}
@@ -846,7 +850,7 @@ func verifyMockExecCommandAgentStatus(t *testing.T, client *sdkClient.Client, co
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(time.Second * 4):
+			case <-time.After(time.Second * 1):
 			}
 		}
 	}()
@@ -887,7 +891,4 @@ func killMockExecCommandAgent(t *testing.T, client *sdkClient.Client, containerI
 		Detach: true,
 	})
 	require.NoError(t, err)
-
-	// Windows docker exec takes longer than Linux
-	time.Sleep(4 * time.Second)
 }

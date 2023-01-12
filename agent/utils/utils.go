@@ -110,6 +110,18 @@ func Strptr(s string) *string {
 	return &s
 }
 
+func IntPtr(i int) *int {
+	return &i
+}
+
+func Int64Ptr(i int64) *int64 {
+	return &i
+}
+
+func BoolPtr(b bool) *bool {
+	return &b
+}
+
 // Uint16SliceToStringSlice converts a slice of type uint16 to a slice of type
 // *string. It uses strconv.Itoa on each element
 func Uint16SliceToStringSlice(slice []uint16) []*string {
@@ -149,6 +161,11 @@ func ParseBool(str string, default_ bool) bool {
 		return default_
 	}
 	return res
+}
+
+// Removes element at a particular index in the slice
+func Remove(slice []string, s int) []string {
+	return append(slice[:s], slice[s+1:]...)
 }
 
 // IsAWSErrorCodeEqual returns true if the err implements Error

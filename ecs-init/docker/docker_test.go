@@ -1,4 +1,6 @@
+//go:build test
 // +build test
+
 // Copyright 2015-2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may
@@ -16,8 +18,9 @@ package docker
 
 import (
 	"errors"
-	"io/ioutil"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -34,7 +37,7 @@ import (
 const (
 	testTempDirPrefix = "init-docker-test-"
 
-	expectedAgentBindsUnspecifiedPlatform = 21
+	expectedAgentBindsUnspecifiedPlatform = 20
 	expectedAgentBindsSuseUbuntuPlatform  = 18
 )
 
@@ -828,21 +831,13 @@ func TestStartAgentWithExecBinds(t *testing.T) {
 	hostCapabilityExecResourcesDir := filepath.Join(hostResourcesRootDir, execCapabilityName)
 	containerCapabilityExecResourcesDir := filepath.Join(containerResourcesRootDir, execCapabilityName)
 
-	// binaries
-	hostBinDir := filepath.Join(hostCapabilityExecResourcesDir, execBinRelativePath)
-	containerBinDir := filepath.Join(containerCapabilityExecResourcesDir, execBinRelativePath)
-
 	// config
 	hostConfigDir := filepath.Join(hostCapabilityExecResourcesDir, execConfigRelativePath)
 	containerConfigDir := filepath.Join(containerCapabilityExecResourcesDir, execConfigRelativePath)
 
-	// certs
-	hostCertsDir := filepath.Join(hostCapabilityExecResourcesDir, execCertsRelativePath)
-	containerCertsDir := filepath.Join(containerCapabilityExecResourcesDir, execCertsRelativePath)
-
 	expectedExecBinds := []string{
-		hostBinDir + ":" + containerBinDir + readOnly,
-		hostCertsDir + ":" + containerCertsDir + readOnly,
+		hostResourcesRootDir + ":" + containerResourcesRootDir + readOnly,
+		hostConfigDir + ":" + containerConfigDir,
 	}
 	expectedAgentBinds += len(expectedExecBinds)
 
@@ -885,17 +880,9 @@ func TestGetCapabilityExecBinds(t *testing.T) {
 	hostCapabilityExecResourcesDir := filepath.Join(hostResourcesRootDir, execCapabilityName)
 	containerCapabilityExecResourcesDir := filepath.Join(containerResourcesRootDir, execCapabilityName)
 
-	// binaries
-	hostBinDir := filepath.Join(hostCapabilityExecResourcesDir, execBinRelativePath)
-	containerBinDir := filepath.Join(containerCapabilityExecResourcesDir, execBinRelativePath)
-
 	// config
 	hostConfigDir := filepath.Join(hostCapabilityExecResourcesDir, execConfigRelativePath)
 	containerConfigDir := filepath.Join(containerCapabilityExecResourcesDir, execConfigRelativePath)
-
-	// certs
-	hostCertsDir := filepath.Join(hostCapabilityExecResourcesDir, execCertsRelativePath)
-	containerCertsDir := filepath.Join(containerCapabilityExecResourcesDir, execCertsRelativePath)
 
 	testCases := []struct {
 		name            string
@@ -908,19 +895,17 @@ func TestGetCapabilityExecBinds(t *testing.T) {
 				return true
 			},
 			expectedBinds: []string{
-				hostBinDir + ":" + containerBinDir + readOnly,
+				hostResourcesRootDir + ":" + containerResourcesRootDir + readOnly,
 				hostConfigDir + ":" + containerConfigDir,
-				hostCertsDir + ":" + containerCertsDir + readOnly,
 			},
 		},
 		{
-			name: "only ssm-agent bin path valid",
+			name: "managed-agents path valid, no execute-command",
 			testIsPathValid: func(path string, isDir bool) bool {
-				return path == hostBinDir
+				return path == hostResourcesRootDir
 			},
 			expectedBinds: []string{
-				hostBinDir + ":" + containerBinDir + readOnly,
-				hostConfigDir + ":" + containerConfigDir,
+				hostResourcesRootDir + ":" + containerResourcesRootDir + readOnly,
 			},
 		},
 		{
@@ -928,28 +913,26 @@ func TestGetCapabilityExecBinds(t *testing.T) {
 			testIsPathValid: func(path string, isDir bool) bool {
 				return false
 			},
-			expectedBinds: []string{
-				hostConfigDir + ":" + containerConfigDir,
-			},
+			expectedBinds: []string{},
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			isPathValid = tc.testIsPathValid
-			binds := getCapabilityExecBinds()
+			binds := getCapabilityBinds()
 			assert.Equal(t, tc.expectedBinds, binds)
 		})
 	}
 }
 
 func TestDefaultIsPathValid(t *testing.T) {
-	rootDir, err := ioutil.TempDir(os.TempDir(), testTempDirPrefix)
+	rootDir, err := os.MkdirTemp(os.TempDir(), testTempDirPrefix)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(rootDir)
 
-	file, err := ioutil.TempFile(rootDir, "file")
+	file, err := os.CreateTemp(rootDir, "file")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1003,4 +986,102 @@ func TestDefaultIsPathValid(t *testing.T) {
 			assert.Equal(t, result, tc.expected)
 		})
 	}
+}
+
+func TestGetCredentialsFetcherSocketBind(t *testing.T) {
+	testCases := []struct {
+		name                                 string
+		credentialsFetcherHostFromEnv        string
+		credentialsFetcherHostFromConfigFile string
+		expectedBind                         string
+	}{
+		{
+			name:                                 "No Credentials Fetcher host from env",
+			credentialsFetcherHostFromEnv:        "",
+			credentialsFetcherHostFromConfigFile: "dummy",
+			expectedBind:                         "/var/credentials-fetcher/socket/credentials_fetcher.sock:/var/credentials-fetcher/socket/credentials_fetcher.sock",
+		},
+		{
+			name:                                 "Invalid Credentials Fetcher host from env",
+			credentialsFetcherHostFromEnv:        "invalid",
+			credentialsFetcherHostFromConfigFile: "dummy",
+			expectedBind:                         "/var/credentials-fetcher/socket/credentials_fetcher.sock:/var/credentials-fetcher/socket/credentials_fetcher.sock",
+		},
+		{
+			name:                                 "Credentials Fetcher from env, no Credentials Fetcher from config file",
+			credentialsFetcherHostFromEnv:        "unix:///var/credentials-fetcher/socket/credentials_fetcher.sock",
+			credentialsFetcherHostFromConfigFile: "",
+			expectedBind:                         "/var/credentials-fetcher/socket/credentials_fetcher.sock:/var/credentials-fetcher/socket/credentials_fetcher.sock",
+		},
+		{
+			name:                                 "Credentials Fetcher from env, invalid Credentials Fetcher from config file",
+			credentialsFetcherHostFromEnv:        "unix:///var/credentials-fetcher/socket/credentials_fetcher.sock",
+			credentialsFetcherHostFromConfigFile: "invalid",
+			expectedBind:                         "/var/credentials-fetcher/socket/credentials_fetcher.sock:/var/credentials-fetcher/socket/credentials_fetcher.sock",
+		},
+		{
+			name:                                 "Credentials Fetcher host from env, Credentials Fetcher from config file",
+			credentialsFetcherHostFromEnv:        "unix:///var/credentials-fetcher/socket/credentials_fetcher.sock.1",
+			credentialsFetcherHostFromConfigFile: "unix:///var/credentials-fetcher/socket/credentials_fetcher.sock.1",
+			expectedBind:                         "/var/credentials-fetcher/socket/credentials_fetcher.sock.1:/var/credentials-fetcher/socket/credentials_fetcher.sock.1",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			os.Setenv("CREDENTIALS_FETCHER_HOST", tc.credentialsFetcherHostFromEnv)
+			defer os.Unsetenv("CREDENTIALS_FETCHER_HOST")
+
+			bind, _ := getCredentialsFetcherSocketBind()
+			assert.Equal(t, tc.expectedBind, bind)
+		})
+	}
+}
+
+func TestInstanceDomainJoined(t *testing.T) {
+	execCommand = fakeExecCommand
+	execLookPath = func(name string) (string, error) {
+		return "/usr/sbin/dummy", nil
+	}
+
+	defer func() {
+		execLookPath = exec.LookPath
+		execCommand = exec.Command
+	}()
+
+	out := isDomainJoined()
+	assert.True(t, out)
+}
+
+func TestInstanceDomainJoinedRealmNotFound(t *testing.T) {
+	execCommand = fakeExecCommand
+	execLookPath = func(name string) (string, error) {
+		return "", nil
+	}
+
+	defer func() {
+		execLookPath = exec.LookPath
+		execCommand = exec.Command
+	}()
+
+	out := isDomainJoined()
+	assert.False(t, out)
+}
+
+func TestExecHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+
+	mockRealmList := "contoso.com\n  type: kerberos\n  realm-name: CONTOSO.COM\n  domain-name: contoso.com\n  configured: kerberos-member\n  server-software: active-directory\n  client-software: sssd\n  required-package: oddjob\n  required-package: oddjob-mkhomedir\n  required-package: sssd\n  required-package: adcli\n  required-package: samba-common-tools\n  login-formats: %U@contoso.com\n  login-policy: allow-realm-logins"
+	fmt.Fprintf(os.Stdout, mockRealmList)
+	os.Exit(0)
+}
+
+func fakeExecCommand(command string, args ...string) *exec.Cmd {
+	cs := []string{"-test.run=TestExecHelperProcess", "--", command}
+	cs = append(cs, args...)
+	cmd := exec.Command(os.Args[0], cs...)
+	cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1"}
+	return cmd
 }
