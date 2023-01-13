@@ -123,7 +123,6 @@ var (
 		attributePrefix + appMeshAttributeSuffix,
 		attributePrefix + taskEIAAttributeSuffix,
 		attributePrefix + taskEIAWithOptimizedCPU,
-		attributePrefix + capabilityServiceConnect,
 	}
 	// List of capabilities that are only supported on external capaciity. Currently only one but keep as a list
 	// for future proof and also align with externalUnsupportedCapabilities.
