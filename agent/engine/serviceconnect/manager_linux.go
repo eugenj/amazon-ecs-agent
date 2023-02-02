@@ -258,6 +258,7 @@ func (m *manager) initRelayEnvironment(config *config.Config, container *apicont
 		envoyModeENV:                        envoyModeValue,
 		agentModeENV:                        agentModeValue,
 		relayEnableENV:                      relayEnableOn,
+		"AWS_EXECUTION_ENV":                 "AWS_ECS_EC2",
 		m.endpointENV:                       endpoint,
 		defaultAppnetEnvoyLogDestinationENV: m.logPathContainer,
 	}
