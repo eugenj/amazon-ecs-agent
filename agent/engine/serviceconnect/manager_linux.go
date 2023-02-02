@@ -228,6 +228,7 @@ func (m *manager) initAgentEnvironment(container *apicontainer.Container) {
 		m.statusENV:             filepath.Join(m.statusPathContainer, m.statusFileName),
 		agentModeENV:            agentModeValue,
 		agentAuthENV:            agentAuthOff,
+		"AWS_EXECUTION_ENV":     "AWS_ECS_EC2",
 		containerInstanceArnENV: m.containerInstanceARN,
 	}
 	if container.GetLogDriver() == "" {
